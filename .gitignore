@@ -1,0 +1,17 @@
+venv/
+data/
+__pycache__/
+*.pyc
+.pytest_cache/
+spark-warehouse/
+metastore_db/
+derby.log
+test_out/
+.env
+.aws/
+*.csv
+*.parquet
+.vscode/
+
+# personal study material and its diagrams, not part of the published project
+docs/
