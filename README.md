@@ -78,7 +78,10 @@ jobs/check_env.py                      environment smoke test
 sql/00_setup_tables.sql                Athena DDL and the unpartitioned baseline table
 sql/01..09_*.sql                       business analytics queries
 benchmarks/                            benchmark queries and measured results
+tests/                                 automated test suite (pytest), 52 tests
+pytest.ini                             pytest settings
 requirements.txt                       Python packages
+LICENSE                                MIT license
 ```
 
 ## The data
@@ -226,6 +229,29 @@ segment profile, portfolio by segment, outlier transactions, and spend concentra
 findings on the synthetic data: Groceries is the largest category (17.9 % of spend); the top 10 %
 of customers account for 31.8 % of spend.
 
+## Testing
+
+An automated suite of **52 tests** (pytest) covers the generator, the storage helpers, the three
+Spark jobs and the SQL files. It needs no AWS account: S3 is replaced by a fake client, and Spark runs
+locally on tiny datasets.
+
+```powershell
+pip install -r requirements.txt
+python -m pytest                    # all 52 tests, about 2 minutes (starts a local Spark session)
+python -m pytest -m "not spark"     # the 34 fast tests, about 2 seconds
+```
+
+| Test file | What it checks |
+|---|---|
+| `test_generate_data.py` | Reproducible output; every injected fault count equals the answer key exactly; no row gets two faults; duplicates are exact copies; orphan IDs can never be real |
+| `test_lake_io.py` | Local and S3 helpers (fake S3 client): listing ingest dates, existence checks, state files, Glue's extra arguments |
+| `test_job1_transactions.py` | Each validation rule and reject reason; orphan detection; standardization and exact money types; reconciliation; reruns add and rewrite nothing; a new batch leaves old months untouched; late data is merged, not overwritten; state-driven `main()` |
+| `test_job1b_small_tables.py` | Customers, accounts and investments: reject reasons, cleaning, reconciliation |
+| `test_job2_curated.py` | Joins neither drop nor multiply rows; aggregates equal hand-calculated values; incremental runs rebuild only the new month |
+| `test_sql_files.py` | Every analytics query is documented and targets the catalog; setup script and benchmark pairs are complete; no account-specific values |
+
+On Windows, the tests set `HADOOP_HOME` and `PATH` for `C:\hadoop` automatically if it exists.
+
 ## Limitations
 
 * **Lifetime aggregates** (`account_summary`, `portfolio_summary`) are recomputed from the curated
@@ -234,19 +260,24 @@ of customers account for 31.8 % of spend.
 * **Partitions are registered with `MSCK REPAIR TABLE`** after each load; partition projection or
   a crawler would automate this.
 * **Outlier query** uses a 3-sigma rule, which is crude for heavily skewed amounts.
-* **Batch only.** No streaming, orchestration (Step Functions / Airflow), or automated tests.
+* **Batch only.** No streaming or orchestration (Step Functions / Airflow); jobs are started by hand.
 * **Broad CLI permissions.** The Glue jobs run under a bucket-scoped role, but the IAM user driving
   the AWS CLI had administrator access in this sandbox; use a narrowly scoped policy beyond a
   personal project.
 
 ## Possible extensions
 
-Orchestrate the jobs with Step Functions or Airflow, use Athena partition projection, add Great
-Expectations-style data tests, convert to Iceberg tables for upserts, and add dashboards on top
-of the curated tables.
+Orchestrate the jobs with Step Functions or Airflow, use Athena partition projection, run
+data-quality checks as a scheduled step (for example with Great Expectations), run the test suite in
+continuous integration, convert to Iceberg tables for upserts, and add dashboards on top of the
+curated tables.
 
 ## Cost note
 
 Glue (per DPU-hour), Athena (per TB scanned, 10 MB minimum per query) and S3 storage are
 billed. This project used 2 G.1X workers for 1-2 minute runs and queries that scan a few MB.
+
+## License
+
+Released under the [MIT License](LICENSE).
 Delete test data and unused jobs when finished.
